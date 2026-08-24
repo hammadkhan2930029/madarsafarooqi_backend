@@ -1,0 +1,5 @@
+{
+  "branches": { "legacy-branch-id": "1" },
+  "classes": { "legacy-class-id": "1" },
+  "collections": { "users": "users", "attendance": "daily_attendance" }
+}

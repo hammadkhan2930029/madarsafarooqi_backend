@@ -1,0 +1,20 @@
+CREATE TABLE `supervisor_inspections` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `supervisor_id` BIGINT UNSIGNED NOT NULL,
+  `branch_id` BIGINT UNSIGNED NOT NULL,
+  `class_id` BIGINT UNSIGNED NOT NULL,
+  `teacher_id` BIGINT UNSIGNED NOT NULL,
+  `inspection_date` DATE NOT NULL,
+  `visit_number` VARCHAR(50) NOT NULL,
+  `arrival_time` VARCHAR(5) NOT NULL,
+  `departure_time` VARCHAR(5) NOT NULL,
+  `answers_json` JSON NOT NULL,
+  `remarks` VARCHAR(1000) NULL,
+  `submitted_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` DATETIME(3) NOT NULL,
+  INDEX `supervisor_inspections_supervisor_id_idx` (`supervisor_id`), INDEX `supervisor_inspections_branch_id_idx` (`branch_id`), INDEX `supervisor_inspections_class_id_idx` (`class_id`), INDEX `supervisor_inspections_teacher_id_idx` (`teacher_id`), INDEX `supervisor_inspections_inspection_date_idx` (`inspection_date`), PRIMARY KEY (`id`),
+  CONSTRAINT `supervisor_inspections_supervisor_id_fkey` FOREIGN KEY (`supervisor_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `supervisor_inspections_branch_id_fkey` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `supervisor_inspections_class_id_fkey` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `supervisor_inspections_teacher_id_fkey` FOREIGN KEY (`teacher_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

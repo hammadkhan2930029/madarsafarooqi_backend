@@ -1,0 +1,9 @@
+'use strict';
+process.env.NODE_ENV='test';process.env.DATABASE_URL||='mysql://user:password@localhost:3306/test';process.env.JWT_ACCESS_SECRET||='a'.repeat(32);process.env.JWT_REFRESH_SECRET||='b'.repeat(32);process.env.APP_TIMEZONE||='Asia/Karachi';
+const assert=require('node:assert/strict');const{test}=require('node:test');const{attendanceStatus,createReport,dateKeyInTimezone,normalizeLoginId,normalizeRole,toDate,validDateKey}=require('../src/migrations/firebaseMigration.utils');
+test('maps only supported legacy roles to backend enums',()=>{assert.equal(normalizeRole('company_admin'),'SUPER_ADMIN');assert.equal(normalizeRole('employee'),'TEACHER');assert.equal(normalizeRole('unknown'),null);});
+test('normalizes internal login IDs without changing names or content',()=>{assert.equal(normalizeLoginId(' Teacher.001 '),'teacher.001');const name='محمد احمد';assert.equal(name,'محمد احمد');});
+test('converts Firestore and ISO timestamps to the same UTC instant',()=>{const firebase={toDate:()=>new Date('2026-07-01T03:00:00.123Z')};assert.equal(toDate(firebase).toISOString(),'2026-07-01T03:00:00.123Z');assert.equal(toDate('2026-07-01T08:00:00+05:00').toISOString(),'2026-07-01T03:00:00.000Z');});
+test('validates legacy date keys and derives institution date',()=>{assert.equal(validDateKey('2026-07-01'),'2026-07-01');assert.equal(validDateKey('2026-02-30'),null);assert.equal(dateKeyInTimezone(new Date('2026-06-30T20:00:00Z'),'Asia/Karachi'),'2026-07-01');});
+test('maps legacy attendance status safely',()=>{assert.equal(attendanceStatus({status:'complete'}),'PRESENT');assert.equal(attendanceStatus({status:'on_leave'}),'ON_LEAVE');assert.equal(attendanceStatus({check_in_at:'value'}),'INCOMPLETE');});
+test('migration report exposes required counters',()=>{const report=createReport();for(const section of ['users','attendance'])assert.deepEqual(Object.keys(report[section]),['scanned','imported','skipped','duplicates','errors']);});

@@ -1,0 +1,43 @@
+{
+  "name": "smarthazri-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "REST API backend for SmartHazri Madarsa Management",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test --test-isolation=none",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "prisma db seed",
+    "salary:calculate": "node src/jobs/calculateMonthlySalaries.js",
+    "migrate:firebase:dry-run": "node src/migrations/migrateFirebaseToMysql.js",
+    "migrate:firebase": "node src/migrations/migrateFirebaseToMysql.js --execute --confirm=FIREBASE_TO_MYSQL"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.13.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.1",
+    "zod": "^4.0.14"
+  },
+  "devDependencies": {
+    "firebase-admin": "^14.2.0",
+    "nodemon": "^3.1.10",
+    "prisma": "^6.13.0",
+    "supertest": "^7.1.4"
+  }
+}

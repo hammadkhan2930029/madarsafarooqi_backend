@@ -1,0 +1,423 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  TEACHER
+}
+
+enum TeacherType {
+  TEACHER
+  SUPERVISOR
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  INCOMPLETE
+  ABSENT
+  ON_LEAVE
+}
+
+enum ReportType {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  name                 String                 @db.VarChar(150)
+  loginId              String                 @unique @map("login_id") @db.VarChar(100)
+  email                String?                @unique @db.VarChar(191)
+  passwordHash         String                 @map("password_hash") @db.VarChar(255)
+  contact              String?                @db.VarChar(30)
+  role                 UserRole
+  teacherType          TeacherType?           @map("teacher_type")
+  branchId             BigInt?                @map("branch_id") @db.UnsignedBigInt
+  classId              BigInt?                @map("class_id") @db.UnsignedBigInt
+  shiftId              BigInt?                @map("shift_id") @db.UnsignedBigInt
+  timing               String?                @db.VarChar(50)
+  baseSalary           Decimal?               @map("base_salary") @db.Decimal(12, 2)
+  status               RecordStatus           @default(ACTIVE)
+  tokenVersion         Int                    @default(0) @map("token_version")
+  legacyFirebaseUid    String?                @unique @map("legacy_firebase_uid") @db.VarChar(128)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt            DateTime               @updatedAt @map("updated_at") @db.DateTime(3)
+  branch               Branch?                @relation("TeacherBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  class                Class?                 @relation("TeacherClass", fields: [classId], references: [id], onDelete: Restrict)
+  shift                Shift?                 @relation("TeacherShift", fields: [shiftId], references: [id], onDelete: Restrict)
+  refreshTokens        RefreshToken[]
+  createdBranches      Branch[]               @relation("BranchCreator")
+  createdClasses       Class[]                @relation("ClassCreator")
+  createdShifts        Shift[]                @relation("ShiftCreator")
+  createdStudents      Student[]              @relation("StudentCreator")
+  attendanceRecords    TeacherAttendance[]    @relation("AttendanceTeacher")
+  reports              TeacherReport[]        @relation("ReportTeacher")
+  leaveRequests        LeaveRequest[]         @relation("LeaveTeacher")
+  reviewedLeaves       LeaveRequest[]         @relation("LeaveReviewer")
+  salaries             Salary[]               @relation("SalaryTeacher")
+  corrections          AttendanceCorrection[] @relation("CorrectionTeacher")
+  performedCorrections AttendanceCorrection[] @relation("CorrectionAdmin")
+  performedAuditLogs   AuditLog[]             @relation("AuditPerformer")
+  targetAuditLogs      AuditLog[]             @relation("AuditTarget")
+  supervisorBranches   SupervisorBranch[]     @relation("SupervisorAssignments")
+  assignedSupervisorBranches SupervisorBranch[] @relation("SupervisorAssignmentCreator")
+  supervisorInspections SupervisorInspection[] @relation("InspectionSupervisor")
+  teacherInspections    SupervisorInspection[] @relation("InspectionTeacher")
+
+  @@index([role])
+  @@index([status])
+  @@index([branchId])
+  @@index([classId])
+  @@index([shiftId])
+  @@map("users")
+}
+
+model Shift {
+  id          BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  name        String       @unique @db.VarChar(150)
+  startTime   String       @map("start_time") @db.VarChar(8)
+  endTime     String       @map("end_time") @db.VarChar(8)
+  status      RecordStatus @default(ACTIVE)
+  createdById BigInt       @map("created_by_id") @db.UnsignedBigInt
+  createdAt   DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy   User         @relation("ShiftCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  teachers    User[]       @relation("TeacherShift")
+
+  @@index([status])
+  @@index([createdById])
+  @@map("shifts")
+}
+
+model RefreshToken {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  userId    BigInt    @map("user_id") @db.UnsignedBigInt
+  tokenHash String    @unique @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime  @map("expires_at") @db.DateTime(3)
+  revokedAt DateTime? @map("revoked_at") @db.DateTime(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Branch {
+  id          BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  name        String              @db.VarChar(150)
+  code        String              @unique @db.VarChar(50)
+  address     String?             @db.VarChar(500)
+  contact     String?             @db.VarChar(30)
+  status      RecordStatus        @default(ACTIVE)
+  createdById BigInt              @map("created_by_id") @db.UnsignedBigInt
+  createdAt   DateTime            @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy   User                @relation("BranchCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  classes     Class[]
+  students    Student[]
+  teachers    User[]              @relation("TeacherBranch")
+  attendance  TeacherAttendance[]
+  reports     TeacherReport[]
+  leaves      LeaveRequest[]
+  salaries    Salary[]
+  supervisorAssignments SupervisorBranch[]
+  supervisorInspections SupervisorInspection[]
+
+  @@index([status])
+  @@index([createdById])
+  @@map("branches")
+}
+
+model SupervisorBranch {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  supervisorId BigInt   @map("supervisor_id") @db.UnsignedBigInt
+  branchId     BigInt   @map("branch_id") @db.UnsignedBigInt
+  assignedById BigInt   @map("assigned_by_id") @db.UnsignedBigInt
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  supervisor   User     @relation("SupervisorAssignments", fields: [supervisorId], references: [id], onDelete: Restrict)
+  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  assignedBy   User     @relation("SupervisorAssignmentCreator", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@unique([supervisorId, branchId])
+  @@index([supervisorId])
+  @@index([branchId])
+  @@index([assignedById])
+  @@map("supervisor_branches")
+}
+
+model Class {
+  id             BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  name           String              @db.VarChar(150)
+  normalizedName String              @map("normalized_name") @db.VarChar(150)
+  branchId       BigInt              @map("branch_id") @db.UnsignedBigInt
+  status         RecordStatus        @default(ACTIVE)
+  createdById    BigInt              @map("created_by_id") @db.UnsignedBigInt
+  createdAt      DateTime            @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.DateTime(3)
+  branch         Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy      User                @relation("ClassCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  students       Student[]
+  teachers       User[]              @relation("TeacherClass")
+  attendance     TeacherAttendance[]
+  reports        TeacherReport[]
+  leaves         LeaveRequest[]
+  salaries       Salary[]
+  supervisorInspections SupervisorInspection[]
+
+  @@unique([branchId, normalizedName])
+  @@index([branchId])
+  @@index([status])
+  @@index([createdById])
+  @@map("classes")
+}
+
+model Student {
+  id          BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  admissionNo String       @unique @map("admission_no") @db.VarChar(60)
+  name        String       @db.VarChar(150)
+  fatherName  String       @map("father_name") @db.VarChar(150)
+  contact     String?      @db.VarChar(30)
+  branchId    BigInt       @map("branch_id") @db.UnsignedBigInt
+  classId     BigInt       @map("class_id") @db.UnsignedBigInt
+  status      RecordStatus @default(ACTIVE)
+  createdById BigInt       @map("created_by_id") @db.UnsignedBigInt
+  createdAt   DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.DateTime(3)
+  branch      Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  class       Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  createdBy   User         @relation("StudentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([branchId])
+  @@index([classId])
+  @@index([createdById])
+  @@map("students")
+}
+
+model SupervisorInspection {
+  id             BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  supervisorId   BigInt   @map("supervisor_id") @db.UnsignedBigInt
+  branchId       BigInt   @map("branch_id") @db.UnsignedBigInt
+  classId        BigInt   @map("class_id") @db.UnsignedBigInt
+  teacherId      BigInt   @map("teacher_id") @db.UnsignedBigInt
+  inspectionDate DateTime @map("inspection_date") @db.Date
+  visitNumber    String   @map("visit_number") @db.VarChar(50)
+  arrivalTime    String   @map("arrival_time") @db.VarChar(5)
+  departureTime  String   @map("departure_time") @db.VarChar(5)
+  answersJson    Json     @map("answers_json")
+  remarks        String?  @db.VarChar(1000)
+  submittedAt    DateTime @default(now()) @map("submitted_at") @db.DateTime(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  supervisor     User     @relation("InspectionSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
+  teacher        User     @relation("InspectionTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  branch         Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  class          Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  @@index([supervisorId])
+  @@index([branchId])
+  @@index([classId])
+  @@index([teacherId])
+  @@index([inspectionDate])
+  @@map("supervisor_inspections")
+}
+
+model TeacherAttendance {
+  id             BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  teacherId      BigInt                 @map("teacher_id") @db.UnsignedBigInt
+  branchId       BigInt?                @map("branch_id") @db.UnsignedBigInt
+  classId        BigInt?                @map("class_id") @db.UnsignedBigInt
+  legacyFirebaseId String?              @unique @map("legacy_firebase_id") @db.VarChar(150)
+  attendanceDate DateTime               @map("attendance_date") @db.Date
+  timingSnapshot String?                @map("timing") @db.VarChar(50)
+  checkInAt      DateTime?              @map("check_in_at") @db.DateTime(3)
+  checkOutAt     DateTime?              @map("check_out_at") @db.DateTime(3)
+  isLate         Boolean?               @map("is_late")
+  lateMinutes    Int                    @default(0) @map("late_minutes") @db.UnsignedSmallInt
+  status         AttendanceStatus
+  leaveRequestId BigInt?                @map("leave_request_id") @db.UnsignedBigInt
+  createdAt      DateTime               @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime               @updatedAt @map("updated_at") @db.DateTime(3)
+  teacher        User                   @relation("AttendanceTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  branch         Branch?                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  class          Class?                 @relation(fields: [classId], references: [id], onDelete: Restrict)
+  leaveRequest   LeaveRequest?          @relation(fields: [leaveRequestId], references: [id], onDelete: Restrict)
+  corrections    AttendanceCorrection[]
+
+  @@unique([teacherId, attendanceDate])
+  @@index([teacherId])
+  @@index([branchId])
+  @@index([classId])
+  @@index([attendanceDate])
+  @@index([status])
+  @@index([leaveRequestId])
+  @@map("teacher_attendance")
+}
+
+model TeacherReport {
+  id            BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  teacherId     BigInt     @map("teacher_id") @db.UnsignedBigInt
+  branchId      BigInt     @map("branch_id") @db.UnsignedBigInt
+  classId       BigInt     @map("class_id") @db.UnsignedBigInt
+  reportType    ReportType @map("report_type")
+  reportDate    DateTime   @map("report_date") @db.Date
+  periodStart   DateTime   @map("period_start") @db.Date
+  periodEnd     DateTime   @map("period_end") @db.Date
+  contentJson   Json       @map("content_json")
+  submittedAt   DateTime   @default(now()) @map("submitted_at") @db.DateTime(3)
+  editableUntil DateTime   @map("editable_until") @db.DateTime(3)
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.DateTime(3)
+  teacher       User       @relation("ReportTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  branch        Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  class         Class      @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  @@unique([teacherId, reportType, periodStart, periodEnd])
+  @@index([teacherId])
+  @@index([branchId])
+  @@index([classId])
+  @@index([reportType])
+  @@index([reportDate])
+  @@index([periodStart])
+  @@index([periodEnd])
+  @@index([submittedAt])
+  @@map("teacher_reports")
+}
+
+model LeaveRequest {
+  id           BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  teacherId    BigInt              @map("teacher_id") @db.UnsignedBigInt
+  branchId     BigInt              @map("branch_id") @db.UnsignedBigInt
+  classId      BigInt              @map("class_id") @db.UnsignedBigInt
+  startDate    DateTime            @map("start_date") @db.Date
+  endDate      DateTime            @map("end_date") @db.Date
+  reason       String              @db.Text
+  status       LeaveStatus         @default(PENDING)
+  reviewedById BigInt?             @map("reviewed_by_id") @db.UnsignedBigInt
+  reviewedAt   DateTime?           @map("reviewed_at") @db.DateTime(3)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.DateTime(3)
+  teacher      User                @relation("LeaveTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  branch       Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  class        Class               @relation(fields: [classId], references: [id], onDelete: Restrict)
+  reviewedBy   User?               @relation("LeaveReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  attendance   TeacherAttendance[]
+
+  @@index([teacherId])
+  @@index([branchId])
+  @@index([classId])
+  @@index([status])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([reviewedById])
+  @@map("leave_requests")
+}
+
+model PayrollSetting {
+  id                   BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  absentDeductionType  String   @map("absent_deduction_type") @db.VarChar(30)
+  absentDeductionValue Decimal  @map("absent_deduction_value") @db.Decimal(12, 2)
+  lateDeductionType    String   @map("late_deduction_type") @db.VarChar(30)
+  lateDeductionValue   Decimal  @map("late_deduction_value") @db.Decimal(12, 2)
+  workingDaysMode      String   @map("working_days_mode") @db.VarChar(30)
+  lateCountRule        Int?     @map("late_count_rule") @db.UnsignedSmallInt
+  lateGraceMinutes     Int      @default(0) @map("late_grace_minutes") @db.UnsignedSmallInt
+  minimumSalaryAllowed Decimal? @map("minimum_salary_allowed") @db.Decimal(12, 2)
+  timezone             String?  @db.VarChar(100)
+  allowNegativeSalary  Boolean  @default(false) @map("allow_negative_salary")
+  calculationVersion   Int      @default(1) @map("calculation_version")
+  createdAt            DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@map("payroll_settings")
+}
+
+model Salary {
+  id                   BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  teacherId            BigInt   @map("teacher_id") @db.UnsignedBigInt
+  branchId             BigInt   @map("branch_id") @db.UnsignedBigInt
+  classId              BigInt   @map("class_id") @db.UnsignedBigInt
+  month                Int      @db.UnsignedTinyInt
+  year                 Int      @db.UnsignedSmallInt
+  baseSalary           Decimal  @map("base_salary") @db.Decimal(12, 2)
+  workingDays          Int      @default(0) @map("working_days") @db.UnsignedSmallInt
+  presentDays          Int      @default(0) @map("present_days") @db.UnsignedSmallInt
+  absentDays           Int      @default(0) @map("absent_days") @db.UnsignedSmallInt
+  leaveDays            Int      @default(0) @map("leave_days") @db.UnsignedSmallInt
+  lateDays             Int      @default(0) @map("late_days") @db.UnsignedSmallInt
+  lateMinutes          Int      @default(0) @map("late_minutes") @db.UnsignedInt
+  absentDeduction      Decimal  @default(0) @map("absent_deduction") @db.Decimal(12, 2)
+  lateDeduction        Decimal  @default(0) @map("late_deduction") @db.Decimal(12, 2)
+  otherAdjustment      Decimal  @default(0) @map("other_adjustment") @db.Decimal(12, 2)
+  finalSalary          Decimal  @map("final_salary") @db.Decimal(12, 2)
+  calculationVersion   Int      @map("calculation_version")
+  calculationBreakdown Json     @map("calculation_breakdown")
+  calculatedAt         DateTime @default(now()) @map("calculated_at") @db.DateTime(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  teacher              User     @relation("SalaryTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  branch               Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  class                Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  @@unique([teacherId, month, year])
+  @@index([teacherId])
+  @@index([branchId])
+  @@index([classId])
+  @@index([month])
+  @@index([year])
+  @@index([month, year])
+  @@map("salaries")
+}
+
+model AttendanceCorrection {
+  id            BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  attendanceId  BigInt            @map("attendance_id") @db.UnsignedBigInt
+  teacherId     BigInt            @map("teacher_id") @db.UnsignedBigInt
+  before        Json
+  after         Json
+  reason        String            @db.VarChar(500)
+  correctedById BigInt            @map("corrected_by_id") @db.UnsignedBigInt
+  correctedAt   DateTime          @default(now()) @map("corrected_at") @db.DateTime(3)
+  attendance    TeacherAttendance @relation(fields: [attendanceId], references: [id], onDelete: Restrict)
+  teacher       User              @relation("CorrectionTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  correctedBy   User              @relation("CorrectionAdmin", fields: [correctedById], references: [id], onDelete: Restrict)
+
+  @@index([attendanceId])
+  @@index([teacherId])
+  @@index([correctedById])
+  @@index([correctedAt])
+  @@map("attendance_corrections")
+}
+
+model AuditLog {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  action        String   @db.VarChar(100)
+  targetUserId  BigInt?  @map("target_user_id") @db.UnsignedBigInt
+  performedById BigInt   @map("performed_by_id") @db.UnsignedBigInt
+  requestMetadata Json?    @map("metadata")
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  targetUser    User?    @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  performedBy   User     @relation("AuditPerformer", fields: [performedById], references: [id], onDelete: Restrict)
+
+  @@index([action])
+  @@index([targetUserId])
+  @@index([performedById])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

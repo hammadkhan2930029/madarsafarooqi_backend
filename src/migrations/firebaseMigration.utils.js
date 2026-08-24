@@ -1,0 +1,12 @@
+'use strict';
+const crypto = require('node:crypto');
+const ROLE_MAP = Object.freeze({ company_admin: 'SUPER_ADMIN', employee: 'TEACHER', super_admin: 'SUPER_ADMIN', teacher: 'TEACHER' });
+const normalizeRole = value => ROLE_MAP[String(value || '').trim().toLowerCase()] || null;
+const normalizeLoginId = value => String(value || '').trim().toLowerCase();
+const toDate = value => { if (value == null) return null; if (typeof value?.toDate === 'function') return value.toDate(); if (Number.isFinite(value?._seconds)) return new Date(value._seconds * 1000 + Math.floor((value._nanoseconds || 0) / 1e6)); const date = value instanceof Date ? value : new Date(value); return Number.isNaN(date.getTime()) ? null : date; };
+const validDateKey = value => { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return null; const date = new Date(`${value}T00:00:00.000Z`); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : null; };
+const dateKeyInTimezone = (date, timezone) => { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date); const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value])); return `${values.year}-${values.month}-${values.day}`; };
+const attendanceStatus = record => { const status = String(record.status || '').trim().toLowerCase(); if (status === 'on_leave') return 'ON_LEAVE'; if (status === 'absent') return 'ABSENT'; if (['present', 'complete'].includes(status) || record.check_out_at || record.checkOutAt) return 'PRESENT'; return 'INCOMPLETE'; };
+const randomUnknownPassword = () => crypto.randomBytes(48).toString('base64url');
+const createReport = () => ({ users: { scanned: 0, imported: 0, skipped: 0, duplicates: 0, errors: 0 }, attendance: { scanned: 0, imported: 0, skipped: 0, duplicates: 0, errors: 0 }, warnings: [], errors: [], importedUserIds: [], importedAttendanceIds: [] });
+module.exports = { attendanceStatus, createReport, dateKeyInTimezone, normalizeLoginId, normalizeRole, randomUnknownPassword, toDate, validDateKey };

@@ -1,0 +1,11 @@
+'use strict';
+const express = require('express');
+const { authenticate } = require('../../middleware/authenticate');
+const { authorize } = require('../../middleware/authorize');
+const { validate } = require('../../middleware/validate');
+const { asyncHandler } = require('../../utils/asyncHandler');
+const { sendSuccess } = require('../../utils/response');
+const { shiftService } = require('./shift.service');
+const rules = require('./shift.validation');
+const createShiftRouter = (service = shiftService, auth = authenticate) => { const router = express.Router(); router.use(auth, authorize('SUPER_ADMIN')); router.get('/', validate(rules.listShiftsSchema), asyncHandler(async (req, res) => { const result = await service.list(req.validated.query); return sendSuccess(res, { message: 'Shifts loaded.', data: result.items, meta: result.pagination }); })); router.post('/', validate(rules.createShiftSchema), asyncHandler(async (req, res) => sendSuccess(res, { statusCode: 201, message: 'Shift created.', data: await service.create(req.validated.body, req.auth) }))); router.get('/:id', validate(rules.getShiftSchema), asyncHandler(async (req, res) => sendSuccess(res, { message: 'Shift loaded.', data: await service.get(req.validated.params.id) }))); router.patch('/:id', validate(rules.updateShiftSchema), asyncHandler(async (req, res) => sendSuccess(res, { message: 'Shift updated.', data: await service.update(req.validated.params.id, req.validated.body) }))); router.patch('/:id/status', validate(rules.updateShiftStatusSchema), asyncHandler(async (req, res) => sendSuccess(res, { message: 'Shift status updated.', data: await service.updateStatus(req.validated.params.id, req.validated.body.status) }))); return router; };
+module.exports = { createShiftRouter };
