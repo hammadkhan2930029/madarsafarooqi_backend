@@ -17,7 +17,17 @@ const password = z.string().min(8).max(128)
 const branchId = positiveId('Branch ID');
 const classId = positiveId('Class ID');
 const shiftId = positiveId('Shift ID');
-const teacherType = z.enum(['TEACHER', 'SUPERVISOR']);
+const teacherType = z.enum(['TEACHER', 'SUPERVISOR', 'MUAWIN', 'KHADIM']);
+const workingDays = z.array(z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'])).min(1).max(7).refine(value => new Set(value).size === value.length, 'Working days must be unique.');
+const nullableText = max => z.string().trim().max(max).nullable().optional();
+const profileImageUrl = z.string().trim().url().max(1000).nullable().optional();
+const profileImage = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().min(1).max(100),
+  data: z.string().min(4).max(3000000),
+}).strict();
+const ijaraFrequency = z.enum(['MONTHLY', 'WEEKLY']);
+const ijaraConditions = z.array(z.string().trim().min(1).max(1000)).min(1).max(100);
 const supervisorBranchIds = z.array(branchId).max(100).optional().default([]);
 const timing = z.string().trim().regex(/^(0?[1-9]|1[0-2]):[0-5]\d\s*(AM|PM)\s*-\s*(0?[1-9]|1[0-2]):[0-5]\d\s*(AM|PM)$/i, 'Timing must use 08:00 AM-02:00 PM.')
   .refine(value => {
@@ -31,17 +41,23 @@ const salary = z.union([z.string().trim(), z.number()]).transform(value => Strin
 const listTeachersSchema = z.object({ body: empty, params: empty, query: z.object({
   search: z.string().trim().max(150).optional().default(''),
   branchId: branchId.optional(), classId: classId.optional(),
-  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(), teacherType: teacherType.optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 }).strict() });
 const createTeacherSchema = z.object({ body: z.object({
-  name, loginId, email, password, contact, teacherType, supervisorBranchIds, branchId, classId, shiftId: shiftId.optional(), timing, baseSalary: salary,
-}).strict().refine(value => value.teacherType !== 'SUPERVISOR' || value.supervisorBranchIds.length > 0, 'A Supervisor requires at least one assigned branch.'), params: empty, query: empty });
+  name, loginId, email, password, contact, teacherType, supervisorBranchIds, branchId, classId: classId.optional(), shiftId: shiftId.optional(), timing, baseSalary: salary.optional(), ijaraFrequency: ijaraFrequency.optional().default('MONTHLY'), weeklyIjaraAmount: salary.nullable().optional(),
+  monthlyAllowance: salary.optional().default('0'), attendanceAllowance: salary.optional().default('0'), attendanceAllowanceEnabled: z.boolean().optional().default(false), conveyanceAllowance: salary.optional().default('0'), medicalAllowance: salary.optional().default('0'), workingDays: workingDays.optional(), profileImageUrl, ijaraTerms: nullableText(5000), ijaraConditions, ijaraTermsVersion: z.string().trim().min(1).max(50),
+}).strict().refine(value => value.teacherType !== 'SUPERVISOR' || value.supervisorBranchIds.length > 0, 'A Supervisor requires at least one assigned branch.')
+  .refine(value => !['TEACHER', 'SUPERVISOR'].includes(value.teacherType) || Boolean(value.classId), 'Teacher and Supervisor require a class assignment.')
+  .refine(value => value.ijaraFrequency !== 'MONTHLY' || value.baseSalary !== undefined, 'Monthly Ijara amount is required.')
+  .refine(value => value.ijaraFrequency !== 'WEEKLY' || (value.weeklyIjaraAmount !== undefined && value.weeklyIjaraAmount !== null && value.workingDays?.length), 'Weekly Ijara amount and working days are required.'), params: empty, query: empty });
 const getTeacherSchema = z.object({ body: empty, params: idParams, query: empty });
+const uploadProfileImageSchema = z.object({ body: profileImage, params: idParams, query: empty });
 const updateTeacherSchema = z.object({ body: z.object({
   name: name.optional(), email, contact: contact.optional(), teacherType: teacherType.optional(), supervisorBranchIds: z.array(branchId).max(100).optional(), branchId: branchId.optional(),
-  classId: classId.optional(), shiftId: shiftId.optional(), timing: timing.optional(), baseSalary: salary.optional(),
+  classId: classId.nullable().optional(), shiftId: shiftId.optional(), timing: timing.optional(), baseSalary: salary.optional(), ijaraFrequency: ijaraFrequency.optional(), weeklyIjaraAmount: salary.nullable().optional(), monthlyAllowance: salary.optional(), attendanceAllowance: salary.optional(), attendanceAllowanceEnabled: z.boolean().optional(), conveyanceAllowance: salary.optional(), medicalAllowance: salary.optional(),
+  workingDays: workingDays.optional(), profileImageUrl, ijaraTerms: nullableText(5000), ijaraConditions: ijaraConditions.optional(), ijaraTermsVersion: nullableText(50), onboardingRequired: z.boolean().optional(),
 }).strict().refine(value => Object.keys(value).length > 0, 'At least one field is required.'), params: idParams, query: empty });
 const updateTeacherStatusSchema = z.object({ body: z.object({ status: z.enum(['ACTIVE', 'INACTIVE']) }).strict(), params: idParams, query: empty });
 const resetTeacherPasswordSchema = z.object({ body: z.object({
@@ -49,4 +65,4 @@ const resetTeacherPasswordSchema = z.object({ body: z.object({
   confirmPassword: z.string().min(1).max(128),
 }).strict(), params: teacherIdParams, query: empty });
 
-module.exports = { createTeacherSchema, getTeacherSchema, listTeachersSchema, resetTeacherPasswordSchema, updateTeacherSchema, updateTeacherStatusSchema };
+module.exports = { createTeacherSchema, getTeacherSchema, listTeachersSchema, resetTeacherPasswordSchema, updateTeacherSchema, updateTeacherStatusSchema, uploadProfileImageSchema };

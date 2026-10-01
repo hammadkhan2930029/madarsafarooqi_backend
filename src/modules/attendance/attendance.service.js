@@ -23,12 +23,25 @@ const serializeAttendance = record => record ? ({
 const isUniqueConflict = error => error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 const requireTeacher = async (database, teacherId) => {
   const teacher = await database.user.findFirst({ where: { id: BigInt(teacherId), role: 'TEACHER', status: 'ACTIVE' }, select: {
-    id: true, branchId: true, classId: true, timing: true,
+    id: true, branchId: true, classId: true, timing: true, workingDays: true, ijaraTerms: true, ijaraAcceptedAt: true,
   } });
   if (!teacher) throw new ApiError(404, 'TEACHER_NOT_FOUND', 'Teacher was not found.');
-  if (!teacher.branchId || !teacher.classId) throw new ApiError(409, 'TEACHER_ASSIGNMENT_INCOMPLETE', 'Teacher requires a branch and class assignment.');
+  if (!teacher.branchId) throw new ApiError(409, 'TEACHER_ASSIGNMENT_INCOMPLETE', 'Staff member requires a branch assignment.');
   return teacher;
 };
+const findAttendanceHoliday = async (database, attendanceDate) => database.holiday
+  ? database.holiday.findFirst({ where: { status: 'ACTIVE', affectsAttendance: true, startDate: { lte: attendanceDate }, endDate: { gte: attendanceDate } },
+    orderBy: { startDate: 'asc' }, select: { id: true, title: true, startDate: true, endDate: true } })
+  : null;
+const DAY_NAMES = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+const ensureWorkingDay = (teacher, attendanceDate) => {
+  if (Array.isArray(teacher.workingDays) && teacher.workingDays.length && !teacher.workingDays.includes(DAY_NAMES[attendanceDate.getUTCDay()])) {
+    throw new ApiError(409, 'STAFF_NON_WORKING_DAY', 'Attendance is not required on this staff member\'s non-working day.');
+  }
+  if (teacher.ijaraTerms && !teacher.ijaraAcceptedAt) throw new ApiError(409, 'IJARA_TERMS_NOT_ACCEPTED', 'Ijara terms must be accepted before attendance.');
+};
+const serializeHoliday = holiday => holiday ? { id: String(holiday.id), title: holiday.title,
+  startDate: holiday.startDate.toISOString().slice(0, 10), endDate: holiday.endDate.toISOString().slice(0, 10) } : null;
 const validateRange = query => {
   const dateFrom = query.dateFrom ? parseDateKey(query.dateFrom) : undefined;
   const dateTo = query.dateTo ? parseDateKey(query.dateTo) : undefined;
@@ -99,15 +112,23 @@ const createAttendanceService = (database, options = {}) => {
     async availability(teacherId) {
       const clock = now(); const teacher = await requireTeacher(database, teacherId);
       const settings = database.payrollSetting ? await database.payrollSetting.findFirst({ orderBy: { id: 'asc' }, select: { lateGraceMinutes: true } }) : null;
-      return { ...checkInAvailability(clock, timeZone, teacher.timing, settings?.lateGraceMinutes || 0), ...checkOutAvailability(clock, timeZone, teacher.timing), serverTime: clock, graceMinutes: settings?.lateGraceMinutes || 0, openBeforeMinutes: 20, checkOutCloseAfterMinutes: 30 };
+      const attendanceDate = dateKeyToDatabaseDate(dateKeyInTimeZone(clock, timeZone));
+      try { ensureWorkingDay(teacher, attendanceDate); } catch (error) { return { canCheckIn: false, reason: error.code, ...checkOutAvailability(clock, timeZone, teacher.timing), serverTime: clock }; }
+      const holiday = await findAttendanceHoliday(database, attendanceDate);
+      const checkInWindow = checkInAvailability(clock, timeZone, teacher.timing, settings?.lateGraceMinutes || 0);
+      return { ...checkInWindow, ...(holiday ? { canCheckIn: false, reason: 'ATTENDANCE_HOLIDAY' } : {}), ...checkOutAvailability(clock, timeZone, teacher.timing),
+        holiday: serializeHoliday(holiday), serverTime: clock, graceMinutes: settings?.lateGraceMinutes || 0, openBeforeMinutes: 20, checkOutCloseAfterMinutes: 30 };
     },
     async checkIn(teacherId) {
       const clock = now(); const attendanceDate = dateKeyToDatabaseDate(dateKeyInTimeZone(clock, timeZone));
       try {
         const result = await database.$transaction(async transaction => {
           const teacher = await requireTeacher(transaction, teacherId);
+          ensureWorkingDay(teacher, attendanceDate);
           const existing = await transaction.teacherAttendance.findUnique({ where: { teacherId_attendanceDate: { teacherId: teacher.id, attendanceDate } }, include: attendanceInclude });
           if (existing) return { existing };
+          const holiday = await findAttendanceHoliday(transaction, attendanceDate);
+          if (holiday) throw new ApiError(409, 'ATTENDANCE_HOLIDAY', 'Attendance is not required on this holiday.', { holiday: serializeHoliday(holiday) });
           const leaveRecord = await ensureLeaveRecord(transaction, teacher, attendanceDate);
           if (leaveRecord) return { leaveRecord };
           const timing = parseTiming(teacher.timing);

@@ -16,6 +16,7 @@ const createAuthController = service => ({
   me: async (req, res) => sendSuccess(res, {
     message: 'Profile loaded.', data: await service.me(req.auth.userId),
   }),
+  acceptIjaraTerms: async (req, res) => sendSuccess(res, { message: 'Ijara terms accepted.', data: await service.acceptIjaraTerms(req.auth.userId, req.validated.body.version) }),
   changePassword: async (req, res) => {
     await service.changePassword(req.auth.userId, req.validated.body);
     return sendSuccess(res, { message: 'Password changed. Please log in again.' });

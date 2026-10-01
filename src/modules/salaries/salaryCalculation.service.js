@@ -4,7 +4,7 @@ const { prisma } = require("../../config/database");
 const { ApiError } = require("../../utils/ApiError");
 const { completePayrollSetting } = require("../payroll/payroll.service");
 const Decimal = Prisma.Decimal;
-const POLICY_VERSION = 1;
+const POLICY_VERSION = 2;
 const round = (value) =>
   new Decimal(value).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 const dateKey = (value) => value.toISOString().slice(0, 10);
@@ -27,6 +27,13 @@ const workingDates = (month, year, mode) => {
       dates.push(date);
   }
   return dates;
+};
+const excludeHolidayDates = (dates, holidays = []) => {
+  const excluded = new Set();
+  for (const holiday of holidays) {
+    for (let date = new Date(holiday.startDate); date <= holiday.endDate; date = new Date(date.getTime() + 86400000)) excluded.add(dateKey(date));
+  }
+  return dates.filter(date => !excluded.has(dateKey(date)));
 };
 const deduction = (type, value, count, dailyRate) => {
   if (type === "FIXED") return round(new Decimal(value).mul(count));
@@ -99,8 +106,12 @@ const createSalaryCalculationService = (database, options = {}) => {
           "Complete payroll settings are required before salary calculation."
         );
       validatePolicy(settings);
-      const dates = workingDates(month, year, settings.workingDaysMode),
-        range = monthRange(month, year);
+      const range = monthRange(month, year);
+      const holidays = database.holiday ? await database.holiday.findMany({ where: {
+        status: 'ACTIVE', affectsAttendance: true, startDate: { lte: range.end }, endDate: { gte: range.start },
+      }, select: { startDate: true, endDate: true } }) : [];
+      const baseDates = workingDates(month, year, settings.workingDaysMode);
+      const dates = excludeHolidayDates(baseDates, holidays);
       let cursor = null,
         processed = 0,
         created = 0,
@@ -113,7 +124,7 @@ const createSalaryCalculationService = (database, options = {}) => {
             status: "ACTIVE",
             ...(cursor ? { id: { gt: cursor } } : {}),
           },
-          select: { id: true, branchId: true, classId: true, baseSalary: true },
+          select: { id: true, branchId: true, classId: true, baseSalary: true, ijaraFrequency: true, weeklyIjaraAmount: true, monthlyAllowance: true, attendanceAllowance: true, attendanceAllowanceEnabled: true, conveyanceAllowance: true, medicalAllowance: true, workingDays: true, timing: true },
           orderBy: { id: "asc" },
           take: batchSize,
         });
@@ -123,8 +134,9 @@ const createSalaryCalculationService = (database, options = {}) => {
             async (tx) => {
               if (
                 !teacher.branchId ||
-                !teacher.classId ||
-                teacher.baseSalary == null
+                (teacher.ijaraFrequency === 'WEEKLY'
+                  ? teacher.weeklyIjaraAmount == null || !Array.isArray(teacher.workingDays) || !teacher.workingDays.length
+                  : teacher.baseSalary == null)
               ) {
                 await tx.auditLog.create({
                   data: {
@@ -167,10 +179,20 @@ const createSalaryCalculationService = (database, options = {}) => {
                   },
                 }),
               ]);
-              const counts = calculateCounts(dates, attendance, leaves),
-                base = new Decimal(teacher.baseSalary),
-                dailyRate = dates.length
-                  ? base.div(dates.length)
+              const dayNames = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+              const staffDates = Array.isArray(teacher.workingDays) && teacher.workingDays.length ? dates.filter(date => teacher.workingDays.includes(dayNames[date.getUTCDay()])) : dates;
+              const frequency = teacher.ijaraFrequency || 'MONTHLY',
+                agreedAmount = new Decimal(frequency === 'WEEKLY' ? teacher.weeklyIjaraAmount : teacher.baseSalary),
+                scheduledDaysPerWeek = Array.isArray(teacher.workingDays) ? teacher.workingDays.length : 0,
+                base = frequency === 'WEEKLY' ? agreedAmount.div(scheduledDaysPerWeek).mul(staffDates.length) : agreedAmount,
+                counts = calculateCounts(staffDates, attendance, leaves),
+                allowance = new Decimal(teacher.monthlyAllowance || 0),
+                attendanceAllowance = teacher.attendanceAllowanceEnabled ? new Decimal(teacher.attendanceAllowance || 0) : new Decimal(0),
+                conveyanceAllowance = new Decimal(teacher.conveyanceAllowance || 0),
+                medicalAllowance = new Decimal(teacher.medicalAllowance || 0),
+                grossAmount = round(base.add(allowance).add(attendanceAllowance).add(conveyanceAllowance).add(medicalAllowance)),
+                dailyRate = staffDates.length
+                  ? base.div(staffDates.length)
                   : new Decimal(0),
                 lateUnits = Math.ceil(counts.lateMinutes / settings.lateCountRule),
                 absentDeduction = deduction(
@@ -187,7 +209,7 @@ const createSalaryCalculationService = (database, options = {}) => {
                 ),
                 otherAdjustment = existing?.otherAdjustment || new Decimal(0),
                 raw = round(
-                  base
+                  grossAmount
                     .sub(absentDeduction)
                     .sub(lateDeduction)
                     .add(otherAdjustment)
@@ -202,9 +224,18 @@ const createSalaryCalculationService = (database, options = {}) => {
                   policyVersion: POLICY_VERSION,
                   settingsCalculationVersion: settings.calculationVersion,
                   workingDaysMode: settings.workingDaysMode,
+                  ijaraFrequency: frequency,
+                  agreedIjaraAmount: agreedAmount.toFixed(2),
+                  attendanceAllowanceEnabled: Boolean(teacher.attendanceAllowanceEnabled),
+                  attendanceAllowanceConfigured: new Decimal(teacher.attendanceAllowance || 0).toFixed(2),
+                  staffWorkingDays: teacher.workingDays || null,
+                  staffOffDays: dayNames.filter(day => !(teacher.workingDays || []).includes(day)),
+                  timingSnapshot: teacher.timing || null,
                   missingAttendancePolicy: "ABSENT",
                   incompleteAttendancePolicy: "ABSENT",
                   approvedLeavePolicy: "NO_DEDUCTION",
+                  holidayPolicy: "EXCLUDED_FROM_WORKING_DAYS",
+                  holidayDaysExcluded: baseDates.length - dates.length,
                   absentDeductionType: settings.absentDeductionType,
                   absentDeductionValue:
                     settings.absentDeductionValue.toFixed(2),
@@ -223,7 +254,14 @@ const createSalaryCalculationService = (database, options = {}) => {
                 branchId: teacher.branchId,
                 classId: teacher.classId,
                 baseSalary: base,
-                workingDays: dates.length,
+                ijaraFrequency: frequency,
+                agreedIjaraAmount: agreedAmount,
+                allowance,
+                attendanceAllowance,
+                conveyanceAllowance,
+                medicalAllowance,
+                grossAmount,
+                workingDays: staffDates.length,
                 ...counts,
                 absentDeduction,
                 lateDeduction,
@@ -286,6 +324,7 @@ module.exports = {
   calculateCounts,
   createSalaryCalculationService,
   deduction,
+  excludeHolidayDates,
   monthRange,
   salaryCalculationService,
   workingDates,

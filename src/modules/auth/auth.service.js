@@ -21,12 +21,34 @@ const safeUserProfile = user => ({
   role: user.role,
   teacherType: user.teacherType ?? null,
   baseSalary: user.baseSalary == null ? null : String(user.baseSalary),
+  ijaraFrequency: user.ijaraFrequency || 'MONTHLY',
+  weeklyIjaraAmount: user.weeklyIjaraAmount == null ? null : String(user.weeklyIjaraAmount),
+  monthlyAllowance: user.monthlyAllowance == null ? '0.00' : String(user.monthlyAllowance),
+  attendanceAllowance: user.attendanceAllowance == null ? '0.00' : String(user.attendanceAllowance),
+  attendanceAllowanceEnabled: Boolean(user.attendanceAllowanceEnabled),
+  conveyanceAllowance: user.conveyanceAllowance == null ? '0.00' : String(user.conveyanceAllowance),
+  medicalAllowance: user.medicalAllowance == null ? '0.00' : String(user.medicalAllowance),
+  workingDays: user.workingDays ?? null,
+  profileImageUrl: user.profileImageUrl ?? null,
+  ijaraTerms: user.ijaraTerms ?? null,
+  ijaraConditions: user.ijaraConditions ?? null,
+  ijaraTermsVersion: user.ijaraTermsVersion ?? null,
+  ijaraAcceptedAt: user.ijaraAcceptedAt ?? null,
+  onboardingRequired: Boolean(user.onboardingRequired),
+  onboardingCompletedAt: user.onboardingCompletedAt ?? null,
   branchId: user.branchId == null ? null : String(user.branchId),
   classId: user.classId == null ? null : String(user.classId),
   timing: user.timing ?? null,
   status: user.status,
-  branch: user.branch ? { ...user.branch, id: String(user.branch.id) } : null,
-  class: user.class ? { ...user.class, id: String(user.class.id) } : null,
+  branch: user.branch ? {
+    id: String(user.branch.id),
+    name: user.branch.name,
+    code: user.branch.code,
+  } : null,
+  class: user.class ? {
+    id: String(user.class.id),
+    name: user.class.name,
+  } : null,
 });
 
 const decodeRefresh = token => {
@@ -116,6 +138,14 @@ const createAuthService = database => ({
     if (!user) throw new ApiError(401, 'INVALID_TOKEN', 'Authenticated user no longer exists.');
     if (user.status !== 'ACTIVE') throw new ApiError(403, 'ACCOUNT_INACTIVE', 'Account is inactive.');
     return safeUserProfile(user);
+  },
+
+  async acceptIjaraTerms(userId, version) {
+    const user = await database.user.findFirst({ where: { id: BigInt(userId), role: 'TEACHER', status: 'ACTIVE' } });
+    if (!user) throw new ApiError(404, 'STAFF_NOT_FOUND', 'Staff profile was not found.');
+    if (!user.ijaraTerms) throw new ApiError(409, 'IJARA_TERMS_NOT_CONFIGURED', 'Ijara terms are not configured.');
+    if (version && user.ijaraTermsVersion && version !== user.ijaraTermsVersion) throw new ApiError(409, 'IJARA_TERMS_CHANGED', 'Ijara terms have changed. Please review them again.');
+    return safeUserProfile(await database.user.update({ where: { id: user.id }, data: { ijaraAcceptedAt: new Date() }, include: profileInclude }));
   },
 
   async changePassword(userId, { currentPassword, newPassword, confirmPassword }) {

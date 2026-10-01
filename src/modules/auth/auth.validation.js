@@ -20,5 +20,6 @@ const changePasswordSchema = requestSchema(z.object({
   newPassword: z.string().min(1).max(128),
   confirmPassword: z.string().min(1).max(128),
 }).strict());
+const acceptIjaraTermsSchema = requestSchema(z.object({ version: z.string().trim().max(50).nullable().optional() }).strict());
 
-module.exports = { changePasswordSchema, loginSchema, refreshSchema };
+module.exports = { acceptIjaraTermsSchema, changePasswordSchema, loginSchema, refreshSchema };

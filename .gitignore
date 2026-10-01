@@ -13,3 +13,4 @@ firebase-service-account*.json
 migration-reports/
 backups/
 *.zip
+uploads/profile-images/*

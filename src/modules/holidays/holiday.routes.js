@@ -1,0 +1,21 @@
+'use strict';
+const express = require('express');
+const { authenticate } = require('../../middleware/authenticate');
+const { authorize } = require('../../middleware/authorize');
+const { validate } = require('../../middleware/validate');
+const { asyncHandler } = require('../../utils/asyncHandler');
+const { holidayService } = require('./holiday.service');
+const { createHolidayController } = require('./holiday.controller');
+const rules = require('./holiday.validation');
+const createHolidayRouter = (service = holidayService, authMiddleware = authenticate) => {
+  const router = express.Router(), controller = createHolidayController(service);
+  router.use(authMiddleware, authorize('SUPER_ADMIN'));
+  router.get('/', validate(rules.listHolidaysSchema), asyncHandler(controller.list));
+  router.post('/', validate(rules.createHolidaySchema), asyncHandler(controller.create));
+  router.get('/:id', validate(rules.getHolidaySchema), asyncHandler(controller.get));
+  router.patch('/:id', validate(rules.updateHolidaySchema), asyncHandler(controller.update));
+  router.patch('/:id/status', validate(rules.updateHolidayStatusSchema), asyncHandler(controller.updateStatus));
+  router.delete('/:id', validate(rules.getHolidaySchema), asyncHandler(controller.remove));
+  return router;
+};
+module.exports = { createHolidayRouter };

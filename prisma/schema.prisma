@@ -15,6 +15,13 @@ enum UserRole {
 enum TeacherType {
   TEACHER
   SUPERVISOR
+  MUAWIN
+  KHADIM
+}
+
+enum IjaraFrequency {
+  MONTHLY
+  WEEKLY
 }
 
 enum RecordStatus {
@@ -33,6 +40,10 @@ enum ReportType {
   DAILY
   WEEKLY
   MONTHLY
+}
+
+enum ReportStatus {
+  SUBMITTED
 }
 
 enum LeaveStatus {
@@ -55,6 +66,21 @@ model User {
   shiftId              BigInt?                @map("shift_id") @db.UnsignedBigInt
   timing               String?                @db.VarChar(50)
   baseSalary           Decimal?               @map("base_salary") @db.Decimal(12, 2)
+  ijaraFrequency       IjaraFrequency          @default(MONTHLY) @map("ijara_frequency")
+  weeklyIjaraAmount    Decimal?                @map("weekly_ijara_amount") @db.Decimal(12, 2)
+  monthlyAllowance     Decimal                @default(0) @map("monthly_allowance") @db.Decimal(12, 2)
+  attendanceAllowance Decimal                @default(0) @map("attendance_allowance") @db.Decimal(12, 2)
+  attendanceAllowanceEnabled Boolean         @default(false) @map("attendance_allowance_enabled")
+  conveyanceAllowance Decimal                @default(0) @map("conveyance_allowance") @db.Decimal(12, 2)
+  medicalAllowance    Decimal                @default(0) @map("medical_allowance") @db.Decimal(12, 2)
+  workingDays          Json?                  @map("working_days")
+  profileImageUrl      String?                @map("profile_image_url") @db.VarChar(1000)
+  ijaraTerms           String?                @map("ijara_terms") @db.Text
+  ijaraConditions      Json?                  @map("ijara_conditions")
+  ijaraTermsVersion    String?                @map("ijara_terms_version") @db.VarChar(50)
+  ijaraAcceptedAt      DateTime?              @map("ijara_accepted_at") @db.DateTime(3)
+  onboardingRequired   Boolean                @default(false) @map("onboarding_required")
+  onboardingCompletedAt DateTime?             @map("onboarding_completed_at") @db.DateTime(3)
   status               RecordStatus           @default(ACTIVE)
   tokenVersion         Int                    @default(0) @map("token_version")
   legacyFirebaseUid    String?                @unique @map("legacy_firebase_uid") @db.VarChar(128)
@@ -67,9 +93,12 @@ model User {
   createdBranches      Branch[]               @relation("BranchCreator")
   createdClasses       Class[]                @relation("ClassCreator")
   createdShifts        Shift[]                @relation("ShiftCreator")
+  createdHolidays      Holiday[]              @relation("HolidayCreator")
   createdStudents      Student[]              @relation("StudentCreator")
   attendanceRecords    TeacherAttendance[]    @relation("AttendanceTeacher")
   reports              TeacherReport[]        @relation("ReportTeacher")
+  lastEditedReports    TeacherReport[]        @relation("ReportLastEditor")
+  reportEdits          ReportEditHistory[]    @relation("ReportHistoryEditor")
   leaveRequests        LeaveRequest[]         @relation("LeaveTeacher")
   reviewedLeaves       LeaveRequest[]         @relation("LeaveReviewer")
   salaries             Salary[]               @relation("SalaryTeacher")
@@ -81,6 +110,8 @@ model User {
   assignedSupervisorBranches SupervisorBranch[] @relation("SupervisorAssignmentCreator")
   supervisorInspections SupervisorInspection[] @relation("InspectionSupervisor")
   teacherInspections    SupervisorInspection[] @relation("InspectionTeacher")
+  ijaraAcceptances      IjaraAcceptance[]
+  receivedAdminNotifications AdminNotification[] @relation("AdminNotificationRecipient")
 
   @@index([role])
   @@index([status])
@@ -88,6 +119,21 @@ model User {
   @@index([classId])
   @@index([shiftId])
   @@map("users")
+}
+
+model IjaraAcceptance {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  userId          BigInt   @map("user_id") @db.UnsignedBigInt
+  termsVersion    String   @map("terms_version") @db.VarChar(50)
+  answers         Json
+  accepted        Boolean
+  acceptedAt      DateTime @default(now()) @map("accepted_at") @db.DateTime(3)
+  requestMetadata Json?    @map("request_metadata")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, termsVersion])
+  @@index([userId])
+  @@map("ijara_acceptances")
 }
 
 model Shift {
@@ -105,6 +151,27 @@ model Shift {
   @@index([status])
   @@index([createdById])
   @@map("shifts")
+}
+
+model Holiday {
+  id                BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  title             String       @db.VarChar(200)
+  description       String?      @db.Text
+  startDate         DateTime     @map("start_date") @db.Date
+  endDate           DateTime     @map("end_date") @db.Date
+  affectsAttendance Boolean      @default(true) @map("affects_attendance")
+  status            RecordStatus @default(ACTIVE)
+  createdById       BigInt       @map("created_by_id") @db.UnsignedBigInt
+  createdAt         DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy         User         @relation("HolidayCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([startDate])
+  @@index([endDate])
+  @@index([status])
+  @@index([affectsAttendance])
+  @@index([createdById])
+  @@map("holidays")
 }
 
 model RefreshToken {
@@ -282,23 +349,46 @@ model TeacherReport {
   periodStart   DateTime   @map("period_start") @db.Date
   periodEnd     DateTime   @map("period_end") @db.Date
   contentJson   Json       @map("content_json")
+  status        ReportStatus @default(SUBMITTED)
   submittedAt   DateTime   @default(now()) @map("submitted_at") @db.DateTime(3)
   editableUntil DateTime   @map("editable_until") @db.DateTime(3)
+  lastEditedById BigInt?   @map("last_edited_by_id") @db.UnsignedBigInt
+  lastEditedAt   DateTime? @map("last_edited_at") @db.DateTime(3)
   updatedAt     DateTime   @updatedAt @map("updated_at") @db.DateTime(3)
   teacher       User       @relation("ReportTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
   branch        Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
   class         Class      @relation(fields: [classId], references: [id], onDelete: Restrict)
+  lastEditedBy  User?      @relation("ReportLastEditor", fields: [lastEditedById], references: [id], onDelete: Restrict)
+  editHistory   ReportEditHistory[]
 
   @@unique([teacherId, reportType, periodStart, periodEnd])
   @@index([teacherId])
   @@index([branchId])
   @@index([classId])
   @@index([reportType])
+  @@index([status])
+  @@index([lastEditedById])
   @@index([reportDate])
   @@index([periodStart])
   @@index([periodEnd])
   @@index([submittedAt])
   @@map("teacher_reports")
+}
+
+model ReportEditHistory {
+  id                  BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  reportId            BigInt        @map("report_id") @db.UnsignedBigInt
+  originalContentJson Json          @map("original_content_json")
+  updatedContentJson  Json          @map("updated_content_json")
+  editedById          BigInt        @map("edited_by_id") @db.UnsignedBigInt
+  editedAt            DateTime      @default(now()) @map("edited_at") @db.DateTime(3)
+  report              TeacherReport @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  editedBy            User          @relation("ReportHistoryEditor", fields: [editedById], references: [id], onDelete: Restrict)
+
+  @@index([reportId])
+  @@index([editedById])
+  @@index([editedAt])
+  @@map("report_edit_history")
 }
 
 model LeaveRequest {
@@ -319,6 +409,7 @@ model LeaveRequest {
   class        Class               @relation(fields: [classId], references: [id], onDelete: Restrict)
   reviewedBy   User?               @relation("LeaveReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
   attendance   TeacherAttendance[]
+  adminNotifications AdminNotification[]
 
   @@index([teacherId])
   @@index([branchId])
@@ -328,6 +419,20 @@ model LeaveRequest {
   @@index([endDate])
   @@index([reviewedById])
   @@map("leave_requests")
+}
+
+model AdminNotification {
+  id              BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  recipientUserId BigInt       @map("recipient_user_id") @db.UnsignedBigInt
+  leaveRequestId  BigInt       @map("leave_request_id") @db.UnsignedBigInt
+  createdAt       DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  recipient       User         @relation("AdminNotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  leaveRequest    LeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([recipientUserId, leaveRequestId])
+  @@index([recipientUserId, createdAt])
+  @@index([leaveRequestId])
+  @@map("admin_notifications")
 }
 
 model PayrollSetting {
@@ -353,10 +458,17 @@ model Salary {
   id                   BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   teacherId            BigInt   @map("teacher_id") @db.UnsignedBigInt
   branchId             BigInt   @map("branch_id") @db.UnsignedBigInt
-  classId              BigInt   @map("class_id") @db.UnsignedBigInt
+  classId              BigInt?  @map("class_id") @db.UnsignedBigInt
   month                Int      @db.UnsignedTinyInt
   year                 Int      @db.UnsignedSmallInt
   baseSalary           Decimal  @map("base_salary") @db.Decimal(12, 2)
+  ijaraFrequency       IjaraFrequency @default(MONTHLY) @map("ijara_frequency")
+  agreedIjaraAmount    Decimal  @default(0) @map("agreed_ijara_amount") @db.Decimal(12, 2)
+  allowance            Decimal  @default(0) @db.Decimal(12, 2)
+  attendanceAllowance  Decimal  @default(0) @map("attendance_allowance") @db.Decimal(12, 2)
+  conveyanceAllowance  Decimal  @default(0) @map("conveyance_allowance") @db.Decimal(12, 2)
+  medicalAllowance     Decimal  @default(0) @map("medical_allowance") @db.Decimal(12, 2)
+  grossAmount          Decimal  @default(0) @map("gross_amount") @db.Decimal(12, 2)
   workingDays          Int      @default(0) @map("working_days") @db.UnsignedSmallInt
   presentDays          Int      @default(0) @map("present_days") @db.UnsignedSmallInt
   absentDays           Int      @default(0) @map("absent_days") @db.UnsignedSmallInt
@@ -373,7 +485,7 @@ model Salary {
   updatedAt            DateTime @updatedAt @map("updated_at") @db.DateTime(3)
   teacher              User     @relation("SalaryTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
   branch               Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  class                Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
+  class                Class?   @relation(fields: [classId], references: [id], onDelete: Restrict)
 
   @@unique([teacherId, month, year])
   @@index([teacherId])

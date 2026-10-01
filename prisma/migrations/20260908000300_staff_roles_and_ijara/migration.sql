@@ -1,0 +1,12 @@
+ALTER TABLE `users`
+  MODIFY COLUMN `teacher_type` ENUM('TEACHER','SUPERVISOR','MUAWIN','KHADIM') NULL,
+  ADD COLUMN `monthly_allowance` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN `working_days` JSON NULL,
+  ADD COLUMN `profile_image_url` VARCHAR(1000) NULL,
+  ADD COLUMN `ijara_terms` TEXT NULL,
+  ADD COLUMN `ijara_terms_version` VARCHAR(50) NULL,
+  ADD COLUMN `ijara_accepted_at` DATETIME(3) NULL;
+
+ALTER TABLE `salaries`
+  ADD COLUMN `allowance` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  MODIFY COLUMN `class_id` BIGINT UNSIGNED NULL;

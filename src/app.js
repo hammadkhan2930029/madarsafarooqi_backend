@@ -2,6 +2,7 @@
 
 const cors = require('cors');
 const express = require('express');
+const path = require('node:path');
 const helmet = require('helmet');
 const morgan = require('morgan');
 
@@ -23,6 +24,8 @@ const { createPayrollRouter } = require('./modules/payroll');
 const { createSalaryRouter } = require('./modules/salaries');
 const { createMySalaryRouter } = require('./modules/salaries/mySalaries.routes');
 const { createSupervisorInspectionRouter } = require('./modules/supervisorInspections');
+const { createHolidayRouter } = require('./modules/holidays');
+const { createAdminNotificationRouter } = require('./modules/adminNotifications');
 
 const app = express();
 
@@ -39,13 +42,17 @@ app.use(cors({
   credentials: true,
 }));
 if (env.NODE_ENV === 'development') app.use(morgan('dev'));
+app.use('/api/auth/onboarding/profile-image', express.json({ limit: '4mb', strict: true }));
+app.use('/api/teachers/:id/profile-image', express.json({ limit: '4mb', strict: true }));
 app.use(express.json({ limit: '256kb', strict: true }));
+app.use('/uploads/profile-images', express.static(path.join(process.cwd(), 'uploads', 'profile-images'), { dotfiles: 'deny', fallthrough: false, immutable: true, maxAge: '30d' }));
 
 app.get('/api/health', (_req, res) => sendSuccess(res, { message: 'API is running' }));
 app.use('/api/auth', createAuthRouter());
 app.use('/api/branches', createBranchRouter());
 app.use('/api/classes', createClassRouter());
 app.use('/api/shifts', createShiftRouter());
+app.use('/api/holidays', createHolidayRouter());
 app.use('/api/teachers', createTeacherRouter());
 app.use('/api/students', createStudentRouter());
 app.use('/api/attendance', createAttendanceRouter());
@@ -54,6 +61,7 @@ app.use('/api/reports', createReportRouter());
 app.use('/api/admin/reports', createAdminReportRouter());
 app.use('/api/leave-requests', createLeaveRequestRouter());
 app.use('/api/admin/leave-requests', createAdminLeaveRequestRouter());
+app.use('/api/admin/notifications', createAdminNotificationRouter());
 app.use('/api/admin/payroll', createPayrollRouter());
 app.use('/api/admin/salaries', createSalaryRouter());
 app.use('/api/salaries/me', createMySalaryRouter());

@@ -27,7 +27,7 @@ test('normalizes login IDs and never serializes password hashes', () => {
 test('Super Admin creates a Teacher while client role is rejected', async () => {
   let received;
   const service = { create: async values => { received = values; return serializeTeacher(teacher); } };
-  const body = { name: 'Teacher One', loginId: 'Teacher001', email: null, password: 'StrongPass8', contact: '+92 300 1234567', teacherType: 'SUPERVISOR', supervisorBranchIds: ['1'], branchId: '1', classId: '1', timing: '08:00 AM-02:00 PM', baseSalary: '35000' };
+  const body = { name: 'Teacher One', loginId: 'Teacher001', email: null, password: 'StrongPass8', contact: '+92 300 1234567', teacherType: 'SUPERVISOR', supervisorBranchIds: ['1'], branchId: '1', classId: '1', timing: '08:00 AM-02:00 PM', baseSalary: '35000', ijaraConditions: ['Follow the agreed schedule.'], ijaraTermsVersion: '1' };
   const response = await request(makeApp('SUPER_ADMIN', service)).post('/api/teachers').send(body);
   assert.equal(response.status, 201, JSON.stringify(response.body)); assert.equal(received.role, undefined); assert.equal(received.teacherType, 'SUPERVISOR'); assert.equal(response.body.data.passwordHash, undefined);
   const invalid = await request(makeApp('SUPER_ADMIN', service)).post('/api/teachers').send({ ...body, role: 'SUPER_ADMIN' });

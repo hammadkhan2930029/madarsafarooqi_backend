@@ -11,6 +11,7 @@ const {
   calculateCounts,
   createSalaryCalculationService,
   deduction,
+  excludeHolidayDates,
   workingDates,
 } = require("../src/modules/salaries/salaryCalculation.service");
 const { prisma } = require("../src/config/database");
@@ -87,6 +88,12 @@ test("working-day policy supports calendar days and weekdays without invented ho
   assert.equal(workingDates(7, 2026, "CALENDAR_DAYS").length, 31);
   assert.equal(workingDates(7, 2026, "WEEKDAYS").length, 23);
 });
+test("active attendance holidays can be excluded without changing attendance records", () => {
+  const dates = [date("2026-07-01"), date("2026-07-02"), date("2026-07-03")];
+  const result = excludeHolidayDates(dates, [{ startDate: date("2026-07-02"), endDate: date("2026-07-03") }]);
+  assert.deepEqual(result.map(item => item.toISOString().slice(0, 10)), ["2026-07-01"]);
+  assert.equal(dates.length, 3);
+});
 test("missing payroll settings stops calculation", async () => {
   const database = { payrollSetting: { findFirst: async () => null } };
   await assert.rejects(
@@ -98,7 +105,7 @@ test("missing payroll settings stops calculation", async () => {
     (error) => error.code === "PAYROLL_SETTINGS_MISSING"
   );
 });
-const databaseFor = ({ baseSalary = "0.00" } = {}) => {
+const databaseFor = ({ baseSalary = "0.00", ijaraFrequency = "MONTHLY", weeklyIjaraAmount = null, workingDays = null, attendanceAllowance = "0", attendanceAllowanceEnabled = false, conveyanceAllowance = "0", medicalAllowance = "0", monthlyAllowance = "0" } = {}) => {
   let stored = null;
   const audits = [];
   const database = {
@@ -113,6 +120,14 @@ const databaseFor = ({ baseSalary = "0.00" } = {}) => {
                 branchId: 3n,
                 classId: 4n,
                 baseSalary: new Decimal(baseSalary),
+                ijaraFrequency,
+                weeklyIjaraAmount: weeklyIjaraAmount == null ? null : new Decimal(weeklyIjaraAmount),
+                workingDays,
+                attendanceAllowance: new Decimal(attendanceAllowance),
+                attendanceAllowanceEnabled,
+                conveyanceAllowance: new Decimal(conveyanceAllowance),
+                medicalAllowance: new Decimal(medicalAllowance),
+                monthlyAllowance: new Decimal(monthlyAllowance),
               },
             ],
     },
@@ -147,6 +162,26 @@ test("zero salary calculates safely and missing attendance does not create negat
     mock.getStored().calculationBreakdown.missingAttendancePolicy,
     "ABSENT"
   );
+});
+test("weekly Ijara uses only assigned working days and snapshots the agreement", async () => {
+  const mock = databaseFor({ ijaraFrequency: "WEEKLY", weeklyIjaraAmount: "7000.00", workingDays: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] });
+  await createSalaryCalculationService(mock.database).calculate({ month: 7, year: 2026 }, "1");
+  const salary = mock.getStored();
+  assert.equal(salary.ijaraFrequency, "WEEKLY");
+  assert.equal(salary.agreedIjaraAmount.toFixed(2), "7000.00");
+  assert.equal(salary.workingDays, 23);
+  assert.equal(salary.calculationBreakdown.staffOffDays.includes("SUNDAY"), true);
+  assert.equal(salary.baseSalary.toFixed(2), "32200.00");
+});
+test("named allowances are independent and attendance allowance requires explicit enablement", async () => {
+  const enabled = databaseFor({ baseSalary: "10000", attendanceAllowance: "500", attendanceAllowanceEnabled: true, conveyanceAllowance: "300", medicalAllowance: "200" });
+  await createSalaryCalculationService(enabled.database).calculate({ month: 7, year: 2026 }, "1");
+  assert.equal(enabled.getStored().grossAmount.toFixed(2), "11000.00");
+  assert.equal(enabled.getStored().attendanceAllowance.toFixed(2), "500.00");
+  const disabled = databaseFor({ baseSalary: "10000", attendanceAllowance: "500", attendanceAllowanceEnabled: false });
+  await createSalaryCalculationService(disabled.database).calculate({ month: 7, year: 2026 }, "1");
+  assert.equal(disabled.getStored().attendanceAllowance.toFixed(2), "0.00");
+  assert.equal(disabled.getStored().grossAmount.toFixed(2), "10000.00");
 });
 test("recalculation and duplicate execution update the same unique salary with incremented version", async () => {
   const mock = databaseFor({ baseSalary: "5000.00" }),
