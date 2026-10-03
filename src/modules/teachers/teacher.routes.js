@@ -20,6 +20,7 @@ const createTeacherRouter = (service = teacherService, authMiddleware = authenti
   router.get('/:id', validate(rules.getTeacherSchema), asyncHandler(controller.get));
   router.patch('/:id', validate(rules.updateTeacherSchema), asyncHandler(controller.update));
   router.patch('/:id/status', validate(rules.updateTeacherStatusSchema), asyncHandler(controller.updateStatus));
+  router.delete('/:id', validate(rules.getTeacherSchema), asyncHandler(controller.remove));
   return router;
 };
 module.exports = { createTeacherRouter };

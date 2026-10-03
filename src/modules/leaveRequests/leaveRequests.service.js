@@ -25,7 +25,7 @@ const createLeaveRequestService = (database, options = {}) => {
         if (overlap) throw new ApiError(409, 'LEAVE_REQUEST_OVERLAP', 'An overlapping leave request already exists.');
         const created = await tx.leaveRequest.create({ data: { teacherId: teacher.id, branchId: teacher.branchId, classId: teacher.classId, ...range, reason: input.reason.trim(), status: 'PENDING' }, include });
         const admins = await tx.user.findMany({ where: { role: 'SUPER_ADMIN', status: 'ACTIVE' }, select: { id: true } });
-        if (admins.length) await tx.adminNotification.createMany({ data: admins.map(admin => ({ recipientUserId: admin.id, leaveRequestId: created.id })) });
+        if (admins.length && tx.adminNotification) await tx.adminNotification.createMany({ data: admins.map(admin => ({ recipientUserId: admin.id, leaveRequestId: created.id })) });
         return serialize(created);
       }, { isolationLevel: 'Serializable' });
     },
@@ -40,7 +40,7 @@ const createLeaveRequestService = (database, options = {}) => {
         const reviewedAt = now();
         const claimed = await tx.leaveRequest.updateMany({ where: { id: current.id, status: 'PENDING' }, data: { status: targetStatus, reviewedById: BigInt(reviewerId), reviewedAt } });
         if (claimed.count !== 1) throw new ApiError(409, 'LEAVE_REQUEST_ALREADY_REVIEWED', 'Leave request has already been reviewed.');
-        await tx.adminNotification.deleteMany({ where: { leaveRequestId: current.id } });
+        if (tx.adminNotification) await tx.adminNotification.deleteMany({ where: { leaveRequestId: current.id } });
         let conflicts = 0;
         if (targetStatus === 'APPROVED') for (const attendanceDate of days(current.startDate, current.endDate)) { const existing = await tx.teacherAttendance.findUnique({ where: { teacherId_attendanceDate: { teacherId: current.teacherId, attendanceDate } } }); if (existing && (existing.status === 'PRESENT' || existing.checkOutAt)) { conflicts += 1; continue; } const data = { branchId: current.branchId, classId: current.classId, timingSnapshot: current.teacher?.timing || null, checkInAt: null, checkOutAt: null, isLate: null, status: 'ON_LEAVE', leaveRequestId: current.id }; if (existing) await tx.teacherAttendance.update({ where: { id: existing.id }, data }); else await tx.teacherAttendance.create({ data: { teacherId: current.teacherId, attendanceDate, ...data } }); }
         await tx.auditLog.create({ data: { action: targetStatus === 'APPROVED' ? 'LEAVE_REQUEST_APPROVED' : 'LEAVE_REQUEST_REJECTED', targetUserId: current.teacherId, performedById: BigInt(reviewerId), requestMetadata: { ...metadata, leaveRequestId: String(current.id), startDate: dateKey(current.startDate), endDate: dateKey(current.endDate), attendanceConflicts: conflicts } } });

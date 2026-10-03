@@ -18,6 +18,7 @@ const createTeacherController = service => ({
   get: async (req, res) => sendSuccess(res, { message: 'Teacher loaded.', data: await service.get(req.validated.params.id) }),
   update: async (req, res) => sendSuccess(res, { message: 'Teacher updated.', data: await service.update(req.validated.params.id, req.validated.body, req.auth) }),
   updateStatus: async (req, res) => sendSuccess(res, { message: 'Teacher status updated.', data: await service.updateStatus(req.validated.params.id, req.validated.body.status) }),
+  remove: async (req, res) => sendSuccess(res, { message: 'Teacher deleted.', data: await service.remove(req.validated.params.id) }),
   resetPassword: async (req, res) => {
     await service.resetPassword(req.validated.params.teacherId, req.validated.body, req.auth, requestMetadata(req));
     return sendSuccess(res, { message: 'Teacher password reset successfully.' });

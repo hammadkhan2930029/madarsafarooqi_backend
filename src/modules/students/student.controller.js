@@ -8,6 +8,6 @@ const createStudentController = service => ({
   get: async (req, res) => sendSuccess(res, { message: 'Student loaded.', data: await service.get(req.validated.params.id) }),
   update: async (req, res) => sendSuccess(res, { message: 'Student updated.', data: await service.update(req.validated.params.id, req.validated.body) }),
   updateStatus: async (req, res) => sendSuccess(res, { message: 'Student status updated.', data: await service.updateStatus(req.validated.params.id, req.validated.body.status) }),
-  remove: async (req, res) => sendSuccess(res, { message: 'Student deactivated.', data: await service.remove(req.validated.params.id) }),
+  remove: async (req, res) => sendSuccess(res, { message: 'Student deleted.', data: await service.remove(req.validated.params.id) }),
 });
 module.exports = { createStudentController };

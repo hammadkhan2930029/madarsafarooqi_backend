@@ -95,7 +95,7 @@ const createStudentService = database => ({
   },
   async remove(id) {
     await getStudentRecord(database, id);
-    return serializeStudent(await database.student.update({ where: { id: BigInt(id) }, data: { status: 'INACTIVE' }, include: studentInclude }));
+    return serializeStudent(await database.student.delete({ where: { id: BigInt(id) }, include: studentInclude }));
   },
 });
 

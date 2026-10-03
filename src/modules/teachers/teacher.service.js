@@ -186,6 +186,26 @@ const createTeacherService = database => ({
       return serializeTeacher(teacher);
     });
   },
+  async remove(id) {
+    return database.$transaction(async transaction => {
+      const teacher = await getTeacher(transaction, id);
+      const [attendance, reports, leaves, salaries, inspections, auditLogs] = await Promise.all([
+        transaction.teacherAttendance.count({ where: { teacherId: teacher.id } }),
+        transaction.teacherReport.count({ where: { teacherId: teacher.id } }),
+        transaction.leaveRequest.count({ where: { teacherId: teacher.id } }),
+        transaction.salary.count({ where: { teacherId: teacher.id } }),
+        transaction.supervisorInspection.count({ where: { OR: [{ teacherId: teacher.id }, { supervisorId: teacher.id }] } }),
+        transaction.auditLog.count({ where: { OR: [{ targetUserId: teacher.id }, { performedById: teacher.id }] } }),
+      ]);
+      if (attendance || reports || leaves || salaries || inspections || auditLogs) {
+        throw new ApiError(409, 'TEACHER_DELETE_HAS_HISTORY', 'This teacher has attendance or other records and cannot be deleted.');
+      }
+      await transaction.refreshToken.deleteMany({ where: { userId: teacher.id } });
+      await transaction.ijaraAcceptance.deleteMany({ where: { userId: teacher.id } });
+      await transaction.supervisorBranch.deleteMany({ where: { OR: [{ supervisorId: teacher.id }, { assignedById: teacher.id }] } });
+      return serializeTeacher(await transaction.user.delete({ where: { id: teacher.id }, include: teacherInclude }));
+    });
+  },
   async resetPassword(id, values, auth, requestMetadata) {
     if (values.newPassword !== values.confirmPassword) {
       throw new ApiError(422, 'PASSWORDS_DO_NOT_MATCH', 'New password and confirmation do not match.');
